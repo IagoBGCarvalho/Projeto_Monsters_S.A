@@ -1,4 +1,3 @@
-// Salvar como: MonstersSA.Web/Models/StatementFile.cs
 using System;
 using System.Collections.Generic;
 

@@ -1,0 +1,51 @@
+@page "/reports"
+@using MonstersSA.Web.Models
+@using MonstersSA.Web.Services
+@inject ReportsService ReportService
+
+<PageTitle>Relatório de Performance</PageTitle>
+
+<h1>Performance por Torneio</h1>
+
+@if (summaryData == null)
+{
+    <p><em>Carregando dados...</em></p>
+}
+else
+{
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Torneio</th>
+                <th>Jogos</th>
+                <th>Resultado Líquido</th>
+                <th>ROI</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in summaryData)
+            {
+                <tr>
+                    <td>@item.TournamentName</td>
+                    <td>@item.TotalEntries</td>
+                    <td class="@(item.TotalNetResult > 0? "text-success" : "text-danger")">
+                        @item.TotalNetResult.ToString("C")
+                    </td>
+                    <td class="@(item.ROI > 0? "text-success" : "text-danger")">
+                        @item.ROI.ToString("F2")%
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TournamentPerformanceDto>? summaryData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Busca os dados ao carregar a página
+        summaryData = await ReportService.GetPerformanceSummaryAsync();
+    }
+}

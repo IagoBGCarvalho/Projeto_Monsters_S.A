@@ -1,0 +1,9 @@
+# Normaliza quebras de linha para garantir compatibilidade Windows/Linux
+* text=auto eol=lf
+
+*.cs text eol=lf
+*.razor text eol=lf
+*.cshtml text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf

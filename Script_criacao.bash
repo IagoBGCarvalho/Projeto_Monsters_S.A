@@ -2,12 +2,18 @@ mkdir src # Cria a pasta source
 
 cd src
 
-dotnet new sln -n MonstersSA # Cria a nova Solução
+# Cria o projeto Blazor Web App com interatividade Server Global
+dotnet new blazor -o MonstersSA.Web --interactivity Server --all-interactive
 
-dotnet new mvc -n MonstersSA.Web -o MonstersSA.Web # Cria o projeto MVC
+# Adiciona à solução
+dotnet sln MonstersSA.slnx add MonstersSA.Web/MonstersSA.Web.csproj
 
-dotnet sln MonstersSA.slnx add MonstersSA.Web/MonstersSA.Web.csproj # Adiciona o projeto à solução
+# Instala as dependências do projeto
+dotnet add MonstersSA.Web package Microsoft.EntityFrameworkCore.Sqlite
+dotnet add MonstersSA.Web package Microsoft.EntityFrameworkCore.Design
+dotnet add MonstersSA.Web package ClosedXML
 
-# Criando as pastas que o MVC não cria por padrão:
+# Criando as pastas que o Blazor não cria por padrão:
 mkdir MonstersSA.Web/Data
 mkdir MonstersSA.Web/Services
+mkdir MonstersSA.Web/Models

@@ -1,4 +1,3 @@
-// Salvar como: MonstersSA.Web/Models/TournamentDefinition.cs
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MonstersSA.Web.Models

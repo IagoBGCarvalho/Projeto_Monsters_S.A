@@ -1,0 +1,63 @@
+@page "/"
+@using MonstersSA.Web.Services
+@inject StatementProcessingService ProcessingService
+@inject NavigationManager Nav
+
+<PageTitle>Upload de Extrato</PageTitle>
+
+<h1>Upload de Extrato Bodog</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="mb-3">
+            <label class="form-label">Selecione o arquivo.xlsx:</label>
+            <InputFile OnChange="HandleFileSelected" class="form-control" accept=".xlsx" />
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="alert alert-info">Processando arquivo... Por favor aguarde.</div>
+        }
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger">@errorMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    private bool isLoading = false;
+    private string errorMessage = "";
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            var file = e.File;
+            // Limite de segurança para upload (ex: 5MB)
+            long maxFileSize = 5 * 1024 * 1024; 
+
+            // Copia o stream do arquivo para a memória (necessário para o ClosedXML funcionar)
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
+            stream.Position = 0;
+
+            // Chama o serviço
+            await ProcessingService.ProcessStatementStreamAsync(stream, file.Name, "Iago Carvalho");
+
+            // Redireciona para o relatório
+            Nav.NavigateTo("/reports");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Erro no upload: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

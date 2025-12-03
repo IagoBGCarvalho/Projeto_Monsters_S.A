@@ -1,4 +1,3 @@
-// Salvar como: MonstersSA.Web/Models/TournamentPerformanceDto.cs
 namespace MonstersSA.Web.Models
 {
     // Um DTO que serve para passar os dados para a View do relatório

@@ -1,4 +1,3 @@
-// Salvar como: MonstersSA.Web/Models/Transaction.cs
 using System;
 using System.ComponentModel.DataAnnotations.Schema;
 

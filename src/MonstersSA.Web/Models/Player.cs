@@ -1,4 +1,3 @@
-// Salvar como: MonstersSA.Web/Models/Player.cs
 using System.Collections.Generic;
 
 namespace MonstersSA.Web.Models

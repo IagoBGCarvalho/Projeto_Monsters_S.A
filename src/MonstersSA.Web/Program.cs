@@ -1,52 +1,46 @@
-using Microsoft.EntityFrameworkCore;
+using MonstersSA.Web.Components;
 using MonstersSA.Web.Data;
 using MonstersSA.Web.Services;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Environment.EnvironmentName = Environments.Development;
+// Pegando a connection string do appsettings
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=monsters.db";
 
-// Adicionando o contexto da aplicação:
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+// Configuração do BD com FACTORY
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseSqlite(connectionString));
 
-// Registro de serviços (lógica do Excel e Relatórios)
-builder.Services.AddScoped<IStatementProcessingService, StatementProcessingService>();
-builder.Services.AddScoped<IReportsService, ReportsService>();
+// Aumentando o limite do SignalR para uploads de arquivos grandes
+builder.Services.AddSignalR(e => {
+    e.MaximumReceiveMessageSize = 20 * 1024 * 1024; // 20MB
+});
 
-// Add services to the container.
-builder.Services.AddControllersWithViews();
+// Registrando serviços de 
+builder.Services.AddScoped<StatementProcessingService>();
+builder.Services.AddScoped<ReportsService>();
+
+// Serviços padrão do Blazor
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
 
 var app = builder.Build();
 
-// CRIANDO O BD AUTOMATICAMENTE NA PRIMEIRA EXECUÇÃO DO PROJETO:
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    var context = services.GetRequiredService<ApplicationDbContext>();
-    context.Database.Migrate();
-}
-
-// Configure the HTTP request pipeline.
+// Configuração do pipeline do HTTP
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
+    app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-
+app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
-app.UseRouting();
 
-app.UseAuthorization();
+app.UseAntiforgery();
 
 app.MapStaticAssets();
-
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}")
-    .WithStaticAssets();
-
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
 app.Run();
