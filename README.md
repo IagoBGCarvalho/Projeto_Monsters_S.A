@@ -1,87 +1,90 @@
-# Análise de dados da Bodog - README
+# Análise de dados da Bodog
 
 ## 📊 Sobre o Projeto
 
 Sistema desenvolvido para automatizar a análise de desempenho em torneios de poker na plataforma Bodog. O sistema processa extratos detalhados (.xlsx) fornecidos pela Bodog e gera relatórios com métricas de performance por torneio, incluindo ROI, lucro líquido e estatísticas de jogo.
 
+Recentemente refatorado de MVC para **Blazor Server**, o projeto agora oferece uma experiência mais fluida e interativa, com processamento em tempo real e lógica aprimorada para identificação de torneios.
+
 ## 🎯 Objetivo
 
-Automatizar o processo de análise de desempenho semanal/mensal que anteriormente era feito manualmente, proporcionando insights rápidos e precisos sobre os torneios mais lucrativos.
+Automatizar o processo de análise de desempenho semanal/mensal que anteriormente era feito manualmente, proporcionando insights rápidos e precisos sobre os torneios mais lucrativos, eliminando erros de cálculo e inconsistências de fuso horário.
 
 ## 🚀 Funcionalidades
 
-- **Upload de Extratos**: Processamento automático de arquivos .xlsx da Bodog
-- **Análise de Performance**: Cálculo de ROI, lucro líquido e estatísticas por torneio
-- **Relatórios Inteligentes**: Ordenação por ROI para identificar os torneios mais rentáveis
-- **Interface Web**: Interface intuitiva para upload e visualização de relatórios
+- **Upload via SignalR**: Processamento rápido de arquivos .xlsx utilizando streams de memória, sem necessidade de reload de página.
+- **Análise de Performance**: Cálculo de ROI, lucro líquido e estatísticas por torneio.
+- **Algoritmo de Matching Inteligente**:
+  - **Correção de Fuso**: Conversão automática de UTC (Bodog) para Horário de Brasília.
+  - **Lógica Circular**: Identificação precisa de torneios da madrugada (ex: jogos às 02:00 pertencentes à grade das 22:00).
+- **Relatórios Interativos**: Visualização imediata dos resultados ordenados por rentabilidade.
+- **Gestão de Dados**: Botão integrado para limpeza do banco de dados antes de novos uploads.
 
 ## 🛠️ Tecnologias Utilizadas
 
 - **.NET 10** - Framework principal
-- **ASP.NET Core MVC** - Arquitetura web
-- **Entity Framework Core** - ORM e acesso a dados
+- **Blazor Web App (Interactive Server)** - Arquitetura web com renderização no servidor
+- **Entity Framework Core** - ORM com suporte a `IDbContextFactory` para concorrência
 - **SQLite** - Banco de dados local
-- **ClosedXML** - Processamento de arquivos Excel
-- **Bootstrap** - Interface de usuário
+- **ClosedXML** - Processamento robusto de arquivos Excel
+- **Bootstrap** - Interface de usuário responsiva
 
 ## 📁 Estrutura do Projeto
 
 ```
-MonstersSA.Web/
-├── Controllers/
-│   ├── HomeController.cs
-│   ├── UploadController.cs
-│   └── ReportsController.cs
-├── Models/
-│   ├── Player.cs
-│   ├── TournamentDefinition.cs
-│   ├── PlayedTournament.cs
-│   ├── Transaction.cs
-│   ├── StatementFile.cs
-│   └── TournamentPerformanceDto.cs
-├── Services/
-│   ├── IStatementProcessingService.cs
-│   ├── StatementProcessingService.cs
-│   ├── IReportsService.cs
-│   └── ReportsService.cs
-├── Data/
-│   └── ApplicationDbContext.cs
-├── Views/
-│   ├── Upload/
-│   │   └── Index.cshtml
-│   └── Reports/
-│       └── Index.cshtml
-└── wwwroot/
+MonstersSA.Web/ 
+├── Components/ 
+│ ├── Layout/ 
+│ │ ├── MainLayout.razor 
+│ │ └── NavMenu.razor 
+│ └── Pages/ 
+│ ├── Upload.razor # Página Inicial (Home) 
+│ └── Reports.razor # Visualização dos Relatórios ├── Models/ 
+│ ├── Player.cs 
+│ ├── TournamentDefinition.cs 
+│ ├── PlayedTournament.cs 
+│ ├── Transaction.cs 
+│ ├── StatementFile.cs 
+│ └── TournamentPerformanceDto.cs 
+├── Services/ 
+│ ├── StatementProcessingService.cs 
+│ └── ReportsService.cs 
+├── Data/ 
+│ └── ApplicationDbContext.cs 
+├── wwwroot/ 
+└── Program.cs
 ```
 
 ## 🔄 Fluxo da Aplicação
 
-1. **Acesso Inicial** (domínio:porta) - Página inicial padrão
-2. **Upload de Extrato** (`/Upload`) - Seleção do arquivo .xlsx
-3. **Processamento** - Análise automática das transações e redirecionamento para /Reports
-4. **Relatório** (`/Reports`) - Visualização dos resultados ordenados por ROI
+1. **Acesso Inicial** (domínio:porta) - Carregamento da SPA Blazor.
+2. **Upload de Extrato** - Leitura do arquivo .xlsx via stream segura (SignalR).
+   - O sistema ignora metadados do cabeçalho e busca a âncora de dados ("Date").
+   - Aplica conversão de timezone e matemática modular para matching de torneios.
+3. **Persistência** - Dados salvos em SQLite com verificação de duplicidade.
+4. **Relatório** (`/Reports`) - Navegação automática para a visualização de ROI e Lucro Líquido.
 
 ## 📊 Métricas Calculadas
 
-- **ROI (Return on Investment)**: Retorno percentual sobre o investimento
-- **Resultado Líquido**: Lucro/prejuízo total por torneio
-- **Total de Entradas**: Quantidade de vezes que cada torneio foi jogado
+- **ROI (Return on Investment)**: Retorno percentual sobre o investimento.
+- **Resultado Líquido**: Lucro/prejuízo total por torneio (Payout - BuyIn).
+- **Total de Entradas**: Quantidade de vezes que cada torneio foi jogado.
 
 ## 🎮 Como Usar
 
 ### 1. Obter Extrato da Bodog
-- Solicitar extrato semanal/mensal na plataforma Bodog
-- Download do arquivo .xlsx com todas as transações
+- Solicitar extrato semanal/mensal na plataforma Bodog.
+- Download do arquivo .xlsx com todas as transações.
 
 ### 2. Upload no Sistema
-- Acessar `/Upload`
-- Selecionar arquivo .xlsx
-- Clicar em "Enviar Extrato"
+- Acessar a página inicial.
+- (Opcional) Clicar em **"⚠️ Limpar Banco de Dados"** para resetar análises anteriores.
+- Selecionar arquivo .xlsx.
+- Aguardar o processamento automático.
 
 ### 3. Analisar Resultados
-- Acessar `/Reports` (redirecionamento acontece automaticamente)
-- Ver torneios ordenados por ROI (mais rentáveis primeiro)
-- Identificar padrões de sucesso e oportunidades de melhoria
+- O sistema redireciona automaticamente para `/reports`.
+- Identificar torneios "NÃO MAPEADOS" e analisar o ROI dos torneios conhecidos.
 
 ## ⚙️ Configuração e Execução
 
@@ -90,6 +93,8 @@ MonstersSA.Web/
 - Visual Studio 2022 ou VS Code
 
 ### Execução Local
+Recomendado o uso de Linux ou Windows (configurado via `.gitattributes` para compatibilidade).
+
 ```bash
 git clone <repositorio>
 cd src
@@ -97,9 +102,6 @@ cd MonstersSA.Web/
 dotnet restore
 dotnet run
 ```
-
-### OBS
-Por enquanto, a funcionalidade de limpar o banco a cada uso (mais especificamente a tabela que contém cada linha do arquivo .xlsx) ainda não foi implementada, então é necessário **APAGAR** o banco de dados `monsters.db` ao final de cada uso para que o próximo resultado não seja poluído pelos dados do arquivo anterior.
 
 ## 📈 Exemplo de Saída
 

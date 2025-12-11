@@ -1,7 +1,10 @@
 @page "/"
+@using Microsoft.EntityFrameworkCore 
+@using MonstersSA.Web.Data 
 @using MonstersSA.Web.Services
 @inject StatementProcessingService ProcessingService
 @inject NavigationManager Nav
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 
 <PageTitle>Upload de Extrato</PageTitle>
 
@@ -23,6 +26,10 @@
             <div class="alert alert-danger">@errorMessage</div>
         }
     </div>
+</div>
+
+<div class="mb-3">
+    <button class="btn btn-warning" @onclick="ResetDatabase">⚠️ Limpar Banco de Dados</button>
 </div>
 
 @code {
@@ -59,5 +66,18 @@
         {
             isLoading = false;
         }
+    }
+    private async Task ResetDatabase()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        
+        // Apaga os dados na ordem correta (filhos primeiro)
+        context.Transactions.RemoveRange(context.Transactions);
+        context.PlayedTournaments.RemoveRange(context.PlayedTournaments);
+        context.StatementFiles.RemoveRange(context.StatementFiles);
+        // Não apagamos Players nem TournamentDefinitions para não perder o cadastro
+        
+        await context.SaveChangesAsync();
+        errorMessage = "Banco de dados limpo com sucesso!";
     }
 }

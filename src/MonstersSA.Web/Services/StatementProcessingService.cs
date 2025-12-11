@@ -2,16 +2,18 @@ using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using MonstersSA.Web.Data;
 using MonstersSA.Web.Models;
+using System.Globalization;
 
 namespace MonstersSA.Web.Services;
 
 public class StatementProcessingService
 {
     // Serviço responsável por fazer a leitura do arquivo .xlsx
-    private readonly IDbContextFactory<ApplicationDbContext> _contextFactory; // A fábrica é injetada diretamente como se fosse o contexto direto
+    private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
 
     public StatementProcessingService(IDbContextFactory<ApplicationDbContext> contextFactory)
     {
+        // A fábrica é injetada diretamente como se fosse o contexto direto
         _contextFactory = contextFactory;
     }
 
@@ -20,112 +22,121 @@ public class StatementProcessingService
         // Cria um contexto novo e descartável para esta operação
         using var context = await _contextFactory.CreateDbContextAsync();
 
-        // Verifica se o arquivo já foi processado para evitar duplicidade
+        // Verificação de duplicidade pelo nome do arquivo
         if (await context.StatementFiles.AnyAsync(f => f.OriginalFileName == fileName))
         {
-            return; 
+            return;
         }
 
         // Carrega TODAS as definições de torneio
-        var allDefinitions = await context.TournamentDefinitions.ToListAsync(); 
+        var allDefinitions = await context.TournamentDefinitions.ToListAsync();
 
-        // Carrega TODAS as definições de torneio
-        var player = await context.Players.FirstOrDefaultAsync(p => p.Name == playerName) ?? new Player { Name = playerName };
-        
-        if (player.PlayerId == 0) context.Players.Add(player);
+        // Busca ou cria o jogador
+        var player = await context.Players.FirstOrDefaultAsync(p => p.Name == playerName);
+        if (player == null)
+        {
+            player = new Player { Name = playerName };
+            context.Players.Add(player);
+            await context.SaveChangesAsync(); // Salva para gerar o ID do novo player
+        }
 
-        // Cria o registro do arquivo
+        // Mapeia os dados referentes ao arquivo para adicionar no banco
         var statementFile = new StatementFile
         {
             OriginalFileName = fileName,
             UploadDateUtc = DateTime.UtcNow,
-            Player = player,
-            PeriodStartDate = DateTime.UtcNow, 
+            PlayerId = player.PlayerId,
+            PeriodStartDate = DateTime.UtcNow,
             PeriodEndDate = DateTime.UtcNow
         };
         context.StatementFiles.Add(statementFile);
 
         // Usa o ClosedXML para ler o Stream do .xlsx
-        using (var workbook = new XLWorkbook(fileStream))
+        using var workbook = new XLWorkbook(fileStream);
+        var worksheet = workbook.Worksheets.First();
+        
+        // Variável para pular todas as linhas até achar o cabeçalho "Date" e puder começar a ler e armazenar no banco
+        var rows = worksheet.RangeUsed().RowsUsed();
+        
+        var dataRows = rows
+            .SkipWhile(row => row.Cell(1).GetValue<string>() != "Date")
+            .Skip(1); // Pula a própria linha que contém "Date"
+
+        // Se não sobrar nada, o arquivo está com formato errado ou vazio
+        if (!dataRows.Any())
         {
-            var worksheet = workbook.Worksheet(1);
-            var rows = worksheet.RowsUsed().Skip(6);
-            var transactions = new List<Transaction>();
-
-            foreach (var row in rows)
-            {
-                try
-                {
-                    // Tenta ler a célula 6 (Coluna F). Se falhar (ex: vazia), pointsValue será 0.
-                    row.Cell(6).TryGetValue(out decimal pointsValue);
-                    var transaction = new Transaction
-                    {
-                        TransactionDate = row.Cell(1).GetValue<DateTime>(),
-                        Description = row.Cell(2).GetValue<string>(),
-                        ReferenceId = row.Cell(3).GetValue<string>(),
-                        CashAmount = row.Cell(4).GetValue<decimal>(),
-                        Points = pointsValue,
-                        StatementFile = statementFile
-                    };
-                    transactions.Add(transaction);
-                }
-                catch (Exception ex) { Console.WriteLine(ex.Message); }
-            }
-            
-            context.Transactions.AddRange(transactions);
-            
-            // Chama a transformação
-            var playedTournaments = TransformTransactions(transactions, player, allDefinitions);
-            
-            // ADICIONA OS TORNEIOS CALCULADOS AO CONTEXTO
-            context.PlayedTournaments.AddRange(playedTournaments);
-            
-            await context.SaveChangesAsync();
+            throw new Exception("Formato do arquivo inválido: Cabeçalho 'Date' não encontrado.");
         }
-    }
 
-    private List<PlayedTournament> TransformTransactions(
-        List<Transaction> transactions, 
-        Player player, 
-        List<TournamentDefinition> allDefinitions)
-    {
-        var tournamentTransactions = transactions
-           .Where(t =>!string.IsNullOrEmpty(t.ReferenceId) && 
-                (t.Description.StartsWith("Poker Multi Table Tournament") ||
-                 t.Description.StartsWith("Poker Single Table Tournament") ||
-                 t.Description.StartsWith("Poker Free Roll")))
-           .ToList();
+        var transactions = new List<Transaction>();
 
-        var groupedByRefId = tournamentTransactions.GroupBy(t => t.ReferenceId);
+        foreach (var row in dataRows)
+        {
+            // Se a célula de data estiver vazia, para, pois é o fim do arquivo)
+            if (row.Cell(1).IsEmpty()) continue;
+
+            // Lendo a data para 
+            var rawDate = row.Cell(1).GetDateTime();
+            var transactionDateBrasilia = rawDate.AddHours(-3); // Comversão de UTC (horário da bodog) para horário de brasília, permitindo utilizar os horários de late register
+
+            string description = row.Cell(2).GetValue<string>();
+            string referenceId = row.Cell(3).GetValue<string>();
+
+            if (!row.Cell(4).TryGetValue(out decimal cashAmount)) cashAmount = 0;
+            if (!row.Cell(6).TryGetValue(out decimal points)) points = 0;
+
+            if (!description.Contains("Poker Multi Table Tournament"))
+                continue;
+
+            // Mapeia os dados do registro (linha) do arquivo para adicionar no banco
+            transactions.Add(new Transaction
+            {
+                TransactionDate = transactionDateBrasilia,
+                Description = description,
+                ReferenceId = referenceId,
+                CashAmount = cashAmount,
+                Points = points,
+                StatementFile = statementFile
+            });
+        }
+
+        // Agrupamento de transactions por arquivo 
+        var groupedTransactions = transactions
+            .GroupBy(t => t.ReferenceId)
+            .ToList();
+
         var playedTournaments = new List<PlayedTournament>();
 
-        foreach (var group in groupedByRefId)
+        // Lógica de Matching
+        foreach (var group in groupedTransactions)
         {
-            var buyIns = group.Where(t => t.Description.Contains("Buy-In")).ToList();
-            var payouts = group.Where(t => t.Description.Contains("Cashout/Payout")).ToList();
+            // Pega as transações de Buy-In (valor negativo)
+            var buyIns = group.Where(t => t.CashAmount < 0).ToList();
+            var payouts = group.Where(t => t.CashAmount > 0).ToList();
 
+            // Se não tem buy-in (ex: ticket ou erro), continua, mas trata depois!!
             if (!buyIns.Any()) continue;
 
-            // Usa .Last() para pegar o Buy-In original (o arquivo vem ordenado do mais novo para o antigo)
-            var firstBuyInTransaction = buyIns.Last();
-            decimal firstBuyInAmount = Math.Abs(firstBuyInTransaction.CashAmount);
-            
-            // Ajuste de Fuso Horário (-3h) para comparar UTC do arquivo com Horário de Brasília da Grade
-            var buyInTime = TimeOnly.FromTimeSpan(firstBuyInTransaction.TransactionDate.TimeOfDay).AddHours(-3);
+            // Pega o valor do primeiro buy-in para identificar o tipo
+            decimal firstBuyInAmount = Math.Abs(buyIns.First().CashAmount);
 
-            // Lógica de busca do torneio correto
+            // Pega o horário do PRIMEIRO buy-in
+            var firstBuyInDate = group.Min(t => t.TransactionDate);
+            var buyInTime = TimeOnly.FromDateTime(firstBuyInDate);
+
+            // Filtragem Inicial de torneios por Valor
             var candidates = allDefinitions
-               .Where(d => Math.Abs(d.BuyInAmount - firstBuyInAmount) < 0.01m)
-               .ToList();
+                .Where(d => d.BuyInAmount == firstBuyInAmount)
+                .ToList();
 
-            TournamentDefinition? definition = null;
+            TournamentDefinition definition;
 
             if (candidates.Count == 0)
             {
-                // Torneio não mapeado (cria um dummy para não quebrar)
-                definition = new TournamentDefinition 
-                { 
-                    Name = $"NÃO MAPEADO (${firstBuyInAmount})", 
+                // Caso a transação não se encaixe em nenhum torneio no filtro por valor, é retornada como torneio não mapeado
+                definition = new TournamentDefinition
+                {
+                    Name = $"NÃO MAPEADO (${firstBuyInAmount})",
                     BuyInAmount = firstBuyInAmount,
                     StartTime = buyInTime
                 };
@@ -136,30 +147,37 @@ public class StatementProcessingService
             }
             else
             {
-                // Lógica de desempate por horário mais próximo
-                definition = candidates.OrderBy(def => {
-                    var diff = buyInTime.ToTimeSpan() - def.StartTime.ToTimeSpan();
-                    // Se a diferença for negativa (ex: jogou às 01:00 num torneio de 23:00 do dia anterior)
-                    if (diff < TimeSpan.Zero) diff += TimeSpan.FromHours(24);
-                    return Math.Abs(diff.TotalHours);
+                // LÓGICA DE TEMPO CIRCULAR!!!
+                // Um relógio tem 24h, então a distância entre 23:00 e 01:00 é 2 horas, não 22 horas.
+                definition = candidates.OrderBy(def =>
+                {
+                    double diffMinutes = Math.Abs((buyInTime - def.StartTime).TotalMinutes);
+                    // A distância real é o menor valor entre a diferença direta e a volta no relógio
+                    double circularDiff = Math.Min(diffMinutes, 1440 - diffMinutes);
+                    return circularDiff;
                 }).First();
             }
 
             decimal totalBuyIn = Math.Abs(buyIns.Sum(t => t.CashAmount));
             decimal totalPayout = payouts.Sum(t => t.CashAmount);
 
+            // Por fim, mapeia uma instância de um torneio jogado e armazena ele no banco
             playedTournaments.Add(new PlayedTournament
             {
                 ReferenceId = group.Key,
-                StartDate = group.Min(t => t.TransactionDate),
+                StartDate = firstBuyInDate,
                 TotalBuyIn = totalBuyIn,
                 TotalPayout = totalPayout,
                 NetResult = totalPayout - totalBuyIn,
-                Player = player,
+                PlayerId = player.PlayerId,
                 TournamentDefinition = definition
             });
         }
 
-        return playedTournaments; 
+        // Adiciona tudo ao contexto e salva de uma vez
+        context.Transactions.AddRange(transactions);
+        context.PlayedTournaments.AddRange(playedTournaments);
+
+        await context.SaveChangesAsync();
     }
 }
